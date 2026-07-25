@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Both versions, from the one tag.
+      #
+      # The app and the daemon each carry their own: the app's comes from
+      # `project.yml`, the daemon's from `Cargo.toml` via `CARGO_PKG_VERSION`.
+      # They are not cosmetic — on launch the app compares them and retires a
+      # daemon that does not match (see `Updater.swift`). Setting only one would
+      # make every launch restart the daemon and drop its open broker sessions.
+      - name: Set version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          /usr/bin/sed -i '' "s/MARKETING_VERSION: .*/MARKETING_VERSION: \"$VERSION\"/" apps/mac/project.yml
+          /usr/bin/sed -i '' "1,/^\[workspace.package\]/!{s/^version = \".*\"/version = \"$VERSION\"/;}" Cargo.toml
+          echo "app:    $(grep MARKETING_VERSION apps/mac/project.yml)"
+          echo "daemon: $(grep -m1 '^version' Cargo.toml)"
+
+      - name: Import Developer ID certificate
+        env:
+          CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PW="$(openssl rand -base64 24)"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PW" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PW" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+      # Cheap, and it catches the one class of UI bug that ships silently: a
+      # missing key renders as the key itself.
+      - name: Check localization keys
+        run: python3 .github/check_strings.py
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+      - name: Generate project
+        run: cd apps/mac && xcodegen generate
+
+      # Unsigned here on purpose. `sign.sh` signs everything afterwards, inside
+      # out, including the Sparkle framework — which Xcode would otherwise leave
+      # under a different team, producing an app that passes
+      # `codesign --verify --deep --strict` and still dies at launch.
+      - name: Build
+        run: |
+          cd apps/mac
+          xcodebuild -project Keyward.xcodeproj -scheme Keyward -configuration Release \
+            -derivedDataPath build -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Sign
+        run: ./sign.sh apps/mac/build/Build/Products/Release/Keyward.app
+
+      - name: Notarize & staple
+        env:
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
+        run: |
+          APP="apps/mac/build/Build/Products/Release/Keyward.app"
+          echo "$AC_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/ac_key.p8"
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$RUNNER_TEMP/ac_key.p8" --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "$APP"
+
+      # A last check on the artefact that will actually be downloaded. `spctl`
+      # answers the question a user's Mac asks, which neither codesign nor
+      # notarytool does on its own.
+      - name: Verify the shipped bundle
+        run: |
+          APP="apps/mac/build/Build/Products/Release/Keyward.app"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+          xcrun stapler validate "$APP"
+
+      - name: Package
+        run: |
+          cd apps/mac/build/Build/Products/Release
+          ditto -c -k --keepParent Keyward.app "$GITHUB_WORKSPACE/Keyward-${GITHUB_REF_NAME}.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Keyward-*.zip
+          generate_release_notes: true
+          body: |
+            ### Keyward ${{ github.ref_name }}
+
+            Download `Keyward-*.zip`, unzip, and move **Keyward.app** to /Applications.
+            This build is **signed and notarized** by Apple — it opens without warnings.
+
+            Already have Keyward? It updates itself; nothing to do here.
+
+      - name: Publish appcast (Sparkle)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          ZIP="Keyward-${GITHUB_REF_NAME}.zip"
+          gh release download -R sparkle-project/Sparkle --pattern "Sparkle-*.tar.xz" -O "$RUNNER_TEMP/sparkle.tar.xz"
+          mkdir -p "$RUNNER_TEMP/sparkle" && tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          printf '%s' "$SPARKLE_KEY" > "$RUNNER_TEMP/sparkle_key"
+          SIGINFO="$("$RUNNER_TEMP"/sparkle/bin/sign_update "$ZIP" --ed-key-file "$RUNNER_TEMP/sparkle_key")"
+          rm -f "$RUNNER_TEMP/sparkle_key"
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${ZIP}"
+          git fetch origin main
+          git checkout -B main origin/main
+          python3 .github/update_appcast.py "${GITHUB_REF_NAME#v}" "$URL" "$SIGINFO"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          git commit -m "appcast: ${GITHUB_REF_NAME}" || { echo "no appcast change"; exit 0; }
+          git push origin main

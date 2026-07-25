@@ -1,0 +1,89 @@
+name: Keyward
+options:
+  bundleIdPrefix: ai.keyward
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Not signed for local development. Release builds need Developer ID plus
+    # notarisation — an unsigned .dmg asking for keychain access is dead on
+    # arrival (ARCHITECTURE.md §13.4).
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGNING_REQUIRED: "NO"
+    ENABLE_HARDENED_RUNTIME: "YES"
+    SWIFT_STRICT_CONCURRENCY: complete
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
+
+targets:
+  Keyward:
+    type: application
+    platform: macOS
+    sources:
+      - path: Keyward
+    dependencies:
+      - package: Sparkle
+    preBuildScripts:
+      # The daemon and the CLI ship *inside* the app bundle (ARCHITECTURE.md §2).
+      # Without this the app is a viewer for a service nobody starts: `kw` says
+      # "open the Keyward app", opening it does nothing, and every mechanism in
+      # the product is unreachable to anyone who did not build it from source.
+      - name: Build and embed keywardd + kw
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          ROOT="$SRCROOT/../.."
+          if [ "$CONFIGURATION" = "Release" ]; then
+            PROFILE=release; FLAG=--release
+          else
+            PROFILE=debug; FLAG=
+          fi
+          # Xcode's PATH omits the usual cargo location.
+          export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+          cargo build --manifest-path "$ROOT/Cargo.toml" -p keywardd -p kw $FLAG
+          DEST="$BUILT_PRODUCTS_DIR/$EXECUTABLE_FOLDER_PATH"
+          mkdir -p "$DEST"
+          for BIN in keywardd kw; do
+            cp -f "$ROOT/target/$PROFILE/$BIN" "$DEST/$BIN"
+          done
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.keyward.app
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_LSUIElement: "NO"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "Copyright © 2026 casperkwok"
+        # The app talks to the daemon over a Unix socket in Application Support.
+        # No network entitlement, no sandbox: the sandbox forbids the loopback
+        # broker and the PATH symlink, so distribution is direct, not App Store
+        # (ARCHITECTURE.md §12.10).
+        ENABLE_APP_SANDBOX: "NO"
+    info:
+      path: Keyward/Info.plist
+      properties:
+        CFBundleDisplayName: Keyward
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        LSUIElement: false
+        LSMinimumSystemVersion: "14.0"
+        CFBundleLocalizations:
+          - en
+          - zh-Hans
+        # Sparkle. The feed is served from the repository's default branch rather
+        # than from the site, so a release cannot be held up by the website and a
+        # broken site cannot stop updates reaching installed copies.
+        SUFeedURL: "https://raw.githubusercontent.com/casperkwok/Keyward/main/appcast.xml"
+        # Keyward's own key, not the one used for other apps by the same author.
+        # Sparkle's tooling encourages a single key per developer; that is fine
+        # until one CI secret leaks and every product signed with it can be
+        # updated by whoever holds it. The private half lives outside every
+        # repository — see docs/RELEASING.md.
+        SUPublicEDKey: "ZwTv12ibQ7JwZsbGbH76QLwChDL7jQbGTNt26ZGBzig="
+        SUEnableAutomaticChecks: true

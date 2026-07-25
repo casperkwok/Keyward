@@ -1,0 +1,28 @@
+[package]
+name = "keywardd"
+description = "The Keyward daemon: the only process that holds plaintext. Owns the keychain, the vault metadata, the usage log and the IPC server."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[dependencies]
+keyward-core = { path = "../keyward-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+zeroize = "1"
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+# Peer attestation (§7) is two syscalls behind an `unsafe` boundary the workspace
+# forbids. These wrap exactly those two — `getsockopt(LOCAL_PEERPID)` and
+# `proc_pidpath` — so the lint stays as written.
+nix = { version = "0.31", default-features = false, features = ["socket"] }
+libproc = "0.14"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[lints]
+workspace = true

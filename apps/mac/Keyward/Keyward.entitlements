@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Deliberately empty.
+       No sandbox: the loopback broker, the /usr/local/bin symlink and the
+       bundled daemon are all forbidden inside one (ARCHITECTURE.md §12.10).
+       Distribution is direct, not App Store.
+
+       No `keychain-access-groups` either. An earlier version declared one to
+       share items between the app and the daemon, which (a) needs a provisioning
+       profile a Developer ID build does not carry, and (b) is unnecessary —
+       exactly one binary, `keywardd`, ever touches the keychain. The entitlement
+       only managed to make launchd refuse to start the app, because
+       $(AppIdentifierPrefix) is substituted by Xcode and not by codesign, so the
+       shipped value was the literal variable name. -->
+</dict>
+</plist>

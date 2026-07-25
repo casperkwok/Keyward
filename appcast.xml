@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Sparkle's update feed. Newest release first; CI inserts each <item> on tag.
+
+  Served from this branch on raw.githubusercontent.com rather than from the
+  website, so a release does not depend on the site being up and a broken site
+  cannot stop updates reaching installed copies.
+-->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Keyward</title>
+  </channel>
+</rss>

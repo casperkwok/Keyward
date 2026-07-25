@@ -1,0 +1,20 @@
+[package]
+name = "kw"
+description = "The Keyward CLI. A thin IPC client: no keychain access, no privileges, and no secret at rest."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "kw"
+path = "src/main.rs"
+
+[dependencies]
+keyward-core = { path = "../keyward-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+zeroize = "1"
+
+[lints]
+workspace = true

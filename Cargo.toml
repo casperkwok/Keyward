@@ -1,0 +1,30 @@
+[workspace]
+resolver = "3"
+members = ["crates/keyward-core", "crates/keywardd-stub", "crates/keywardd", "crates/kw"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+# `license-file` rather than `license`: FSL is not an OSI licence and has no SPDX
+# identifier cargo will accept, so naming the file is the only honest option.
+# fsl.software redirects `FSL-1.1-Apache-2.0` to `FSL-1.1-ALv2` — same licence,
+# and the latter is the name the text itself uses.
+license-file = "LICENSE.md"
+repository = "https://github.com/casperkwok/Keyward"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+# A secrets daemon must not panic in a request path: an unwrap that aborts the
+# process is a denial of service on every other session it was serving.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+indexing_slicing = "deny"
