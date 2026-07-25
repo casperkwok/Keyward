@@ -25,12 +25,24 @@ copied across verbatim; the fifth is Keyward's own.
 | `AC_API_KEY_ID` | App Store Connect API key id | yes |
 | `AC_API_ISSUER_ID` | App Store Connect issuer id | yes |
 | `AC_API_KEY_P8` | that key's `.p8`, base64 | yes |
-| `SPARKLE_ED_PRIVATE_KEY` | **Keyward's own** update-signing key | **no — see below** |
+| `SPARKLE_ED_PRIVATE_KEY` | **Keyward's own** update-signing key | **no — already set** |
+
+`SPARKLE_ED_PRIVATE_KEY` is already in place. The other five have to be copied
+across by hand: GitHub secrets are write-only, so nothing can read them out of
+the `Beacon` repository — not a person and not a script. Set them from the
+original files:
 
 ```
-gh secret set SPARKLE_ED_PRIVATE_KEY -R casperkwok/Keyward \
-  < ~/Developer/Projects/hobby/.keyward-updater-keys/keyward-sparkle.key
+gh secret set DEVELOPER_ID_CERT_P12 -R casperkwok/Keyward < cert.p12.base64
+gh secret set P12_PASSWORD          -R casperkwok/Keyward
+gh secret set AC_API_KEY_ID         -R casperkwok/Keyward
+gh secret set AC_API_ISSUER_ID      -R casperkwok/Keyward
+gh secret set AC_API_KEY_P8         -R casperkwok/Keyward < AuthKey.p8.base64
 ```
+
+Until all six exist, tagging a release fails at the certificate-import step and
+publishes nothing — which is the right failure: a release that skipped signing
+would install as a broken app.
 
 ## The update-signing key
 

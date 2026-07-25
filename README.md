@@ -1,5 +1,7 @@
 # Keyward
 
+**[keyward.casperkwok.dev](https://casperkwok.github.io/keyward-site/)** · [Download](https://github.com/casperkwok/Keyward/releases/latest) · [Releasing](docs/RELEASING.md)
+
 **A local secret broker for the AI-coding era.** Your project's API keys live in
 the OS keychain. Your coding agent gets a reference, a scoped loopback session, or
 nothing at all — never the literal value.
