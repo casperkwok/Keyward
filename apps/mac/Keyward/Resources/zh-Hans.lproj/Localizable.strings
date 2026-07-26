@@ -49,6 +49,7 @@
 "settings.appearanceHint" = "跟随系统，或固定为浅色 / 深色。";
 "settings.language" = "语言";
 "settings.languageHint" = "切换后立即生效。";
+"mcp.down" = "这个地址暂时没有响应。重新打开 Keyward 再试一次。";
 "settings.launchAtLogin" = "开机启动";
 "settings.launchAtLoginHint" = "Keyward 需要常驻才能转发请求。";
 "settings.mark" = "标志";
@@ -124,14 +125,6 @@
 "add.upstreamHint" = "填了这个，Keyward 就转发请求而不是把值交出去。已知服务会自动识别。";
 "add.upstreamReveal" = "这是个 HTTP API 吗？填个基础地址 →";
 "error.daemonUnavailable" = "Keyward 的后台服务没能启动。重新安装一次通常能解决。";
-"cli.title" = "kw 命令";
-"cli.hintMissing" = "装上它，你的终端和 coding agent 才能跑 kw exec。";
-"cli.hintInstalled" = "已链接到 /usr/local/bin/kw。";
-"cli.install" = "安装";
-"cli.remove" = "移除";
-"cli.error.missing" = "这个构建里没有 kw 二进制。";
-"cli.error.occupied %@" = "/usr/local/bin/kw 已经被别的东西占用了（%@）。请先移除它 —— Keyward 不会覆盖。";
-"cli.error.manual %@ %@" = "写不进 /usr/local/bin。请自己跑一下：\nsudo ln -sf %1$@ %2$@";
 "approve.title %@" = "把「%@」交出去？";
 "approve.consequence" = "下面这个程序会拿到真正的值。Keyward 没法转发这一个，所以同意就是交出去。";
 "approve.who" = "程序";

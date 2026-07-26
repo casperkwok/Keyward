@@ -77,67 +77,75 @@ enum DaemonLauncher {
     }
 }
 
-/// Where `kw` is linked from, and whether it is there.
+// `CLIInstall` used to live here: it symlinked the bundled `kw` into
+// `/usr/local/bin` from a row in Settings that read "install this, or your
+// terminal and coding agent cannot run kw exec".
+//
+// Both halves of that sentence stopped being true. The agent learns `kw`'s
+// absolute path from the MCP tool descriptions and runs it from inside the
+// bundle, and the person this is built for does not use a terminal at all. What
+// was left was a button on the first screen a new user opens, telling them to
+// install something before anything would work — for a product whose promise is
+// that you add a key and say its name.
+
+/// The loopback MCP endpoint, started beside the daemon.
 ///
-/// `/usr/local/bin` rather than anywhere under the bundle: it is on the default
-/// `PATH` of every shell on macOS, including the non-interactive ones a coding
-/// agent spawns — which is the whole point, since the agent is the caller that
-/// matters.
+/// Kept deliberately dumb: no toggle, no port setting, no lifecycle for anyone
+/// to reason about. The one thing this exists to fix is the line a person pastes
+/// into their coding agent — a URL that never changes instead of an absolute
+/// path into the app bundle, which asked someone who has never opened a terminal
+/// to think about where files live, and which broke whenever the app moved.
+///
+/// Always-on is safe here because the endpoint cannot answer a question about a
+/// value. It serves names, `keyward://` references and a repository scan; any
+/// process already running as this user can get the same three things from the
+/// daemon socket directly.
 @MainActor
-enum CLIInstall {
-    static let destination = "/usr/local/bin/kw"
+enum MCPServer {
+    static let port: UInt16 = 8787
+    static var url: String { "http://127.0.0.1:\(port)/mcp" }
 
-    enum State: Equatable {
-        case installed
-        case missing
-        /// Something else owns the path — almost certainly another copy of the
-        /// app, or a hand-built binary. Never overwrite it silently.
-        case occupiedByOther(String)
-    }
+    /// Start it unless something already answers. Returns whether it is up.
+    @discardableResult
+    static func ensureRunning() async -> Bool {
+        if isListening() { return true }
+        guard let binary = DaemonLauncher.bundledCLI else { return false }
 
-    static func state() -> State {
-        let fm = FileManager.default
-        guard let target = DaemonLauncher.bundledCLI else { return .missing }
-        guard fm.fileExists(atPath: destination) else { return .missing }
-        if let link = try? fm.destinationOfSymbolicLink(atPath: destination) {
-            return link == target.path ? .installed : .occupiedByOther(link)
-        }
-        return .occupiedByOther(destination)
-    }
-
-    /// Returns an error message, or `nil` on success.
-    ///
-    /// Does not ask for administrator rights. If `/usr/local/bin` is not
-    /// writable the honest move is to hand the user the one command that fixes
-    /// it, rather than raising a password prompt from a tool whose entire pitch
-    /// is that it does not need your credentials.
-    static func install() -> String? {
-        guard let target = DaemonLauncher.bundledCLI else {
-            return Loc.t("cli.error.missing")
-        }
-        let fm = FileManager.default
-        let directory = (destination as NSString).deletingLastPathComponent
-
-        if !fm.fileExists(atPath: directory) {
-            return Loc.t("cli.error.manual %@ %@", target.path, destination)
-        }
-        if case .occupiedByOther(let owner) = state() {
-            return Loc.t("cli.error.occupied %@", owner)
-        }
+        let process = Process()
+        process.executableURL = binary
+        process.arguments = ["mcp", "--http", String(port)]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
         do {
-            if fm.fileExists(atPath: destination) {
-                try fm.removeItem(atPath: destination)
-            }
-            try fm.createSymbolicLink(atPath: destination, withDestinationPath: target.path)
-            return nil
+            try process.run()
         } catch {
-            return Loc.t("cli.error.manual %@ %@", target.path, destination)
+            return false
         }
+
+        for _ in 0..<40 {
+            try? await Task.sleep(for: .milliseconds(50))
+            if isListening() { return true }
+        }
+        return false
     }
 
-    static func uninstall() {
-        if case .installed = state() {
-            try? FileManager.default.removeItem(atPath: destination)
+    /// A TCP connect, not an MCP handshake: this only has to answer "is the port
+    /// taken by something", and a half-finished JSON-RPC exchange would be a
+    /// slower way to learn the same thing.
+    static func isListening() -> Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let ok = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
         }
+        return ok
     }
 }

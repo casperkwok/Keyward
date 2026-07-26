@@ -43,7 +43,9 @@ kw — Keyward
 
   kw scan [--staged] [path] find literal secrets. Exits 1 on a hit, so it works
                             as a pre-commit hook.
-  kw mcp                    MCP server on stdio: names and references, no values
+  kw mcp [--http [PORT]]    MCP server: names and references, no values. On stdio
+                            by default; --http serves the same tools at
+                            http://127.0.0.1:8787/mcp
 
 `kw render` is the only command that writes a secret to disk. It refuses any path
 .gitignore does not cover, and the file it writes is mode 0600.
@@ -76,7 +78,21 @@ fn run(args: &[String]) -> i32 {
         "render" => return render::run(args.get(1..).unwrap_or_default()),
         // Speaks JSON-RPC on stdout for as long as it runs, so nothing else here
         // may print to it.
-        "mcp" => return mcp::run(),
+        "mcp" => {
+            // `--http [PORT]` serves the same tools over loopback HTTP, so the
+            // line a user pastes into their agent is a URL rather than a path
+            // into the app bundle.
+            return match args.iter().position(|a| a == "--http") {
+                Some(i) => {
+                    let port = args
+                        .get(i + 1)
+                        .and_then(|p| p.parse::<u16>().ok())
+                        .unwrap_or(mcp::DEFAULT_HTTP_PORT);
+                    mcp::run_http(port)
+                }
+                None => mcp::run(),
+            };
+        }
         "-h" | "--help" | "help" => {
             print!("{USAGE}");
             return 0;

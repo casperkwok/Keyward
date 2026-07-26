@@ -121,6 +121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // that holds the secrets on the previous build (see `Updater.swift`).
             let up = await DaemonVersion.reconcile()
             if !up { store.reportDaemonUnavailable() }
+            // The agent-facing endpoint, started every launch for the same reason
+            // the daemon is: an instruction that says "connect Keyward" is false
+            // if nothing is listening when the user follows it.
+            await MCPServer.ensureRunning()
             await store.load()
         }
         approvals.start()

@@ -9,8 +9,6 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(Prefs.self) private var prefs
     @State private var loginError: String?
-    @State private var cliState = CLIInstall.state()
-    @State private var cliError: String?
 
     var body: some View {
         @Bindable var prefs = prefs
@@ -43,28 +41,6 @@ struct SettingsView: View {
                     .labelsHidden()
                     .fixedSize()
                     .tint(Tint.accent)
-                }
-
-                Rectangle().fill(Tint.line).frame(height: 0.5)
-
-                // Without this the CLI is inside the app bundle and on nobody's
-                // PATH, so `kw exec` — the command every agent instruction tells
-                // people to run — is `command not found`.
-                row(
-                    title: "cli.title",
-                    detail: cliError.map { LocalizedStringKey($0) }
-                        ?? (cliState == .installed ? "cli.hintInstalled" : "cli.hintMissing")
-                ) {
-                    Button(cliState == .installed ? "cli.remove" : "cli.install") {
-                        if cliState == .installed {
-                            CLIInstall.uninstall()
-                            cliError = nil
-                        } else {
-                            cliError = CLIInstall.install()
-                        }
-                        cliState = CLIInstall.state()
-                    }
-                    .buttonStyle(GhostButtonStyle())
                 }
 
                 Rectangle().fill(Tint.line).frame(height: 0.5)

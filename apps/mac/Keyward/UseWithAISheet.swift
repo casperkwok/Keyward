@@ -20,6 +20,7 @@ struct UseWithAISheet: View {
     @Environment(Store.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var copied = false
+    @State private var endpointUp = true
 
     /// A real name from the vault, because "use the stripe key" only teaches
     /// anything if `stripe` is a key you have.
@@ -27,12 +28,18 @@ struct UseWithAISheet: View {
         store.secrets.first?.name ?? "stripe"
     }
 
+    /// A URL, not a path into the app bundle.
+    ///
+    /// This used to name `kw` by absolute path, which is what the stdio transport
+    /// requires. Two things were wrong with it: it asked a person who has never
+    /// opened a terminal to reason about where files live, and it went stale the
+    /// moment the app was moved. The endpoint answers at the same address for
+    /// ever.
     private var snippet: String {
-        let path = DaemonLauncher.bundledCLI?.path ?? "/Applications/Keyward.app/Contents/MacOS/kw"
-        return """
+        """
         {
           "mcpServers": {
-            "keyward": { "command": "\(path)", "args": ["mcp"] }
+            "keyward": { "type": "http", "url": "\(MCPServer.url)" }
           }
         }
         """
@@ -67,6 +74,15 @@ struct UseWithAISheet: View {
                 // `verbatim`, because `Text` parses Markdown and this line is
                 // full of `~/` paths — a pair of tildes is strikethrough, so the
                 // config locations rendered with a line through them.
+                // Shown only when it is wrong. A green dot that is green every
+                // time teaches nobody anything; the one case worth a line on this
+                // screen is the one where pasting the config would not work.
+                if !endpointUp {
+                    Text("mcp.down")
+                        .font(Kind.meta)
+                        .foregroundStyle(Tint.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text(verbatim: Loc.t("use.where"))
                     .font(Kind.meta)
                     .foregroundStyle(Tint.ink3)
@@ -113,5 +129,11 @@ struct UseWithAISheet: View {
         .padding(24)
         .frame(width: 480)
         .background(Tint.surface)
+        .task {
+            while !Task.isCancelled {
+                endpointUp = MCPServer.isListening()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
     }
 }

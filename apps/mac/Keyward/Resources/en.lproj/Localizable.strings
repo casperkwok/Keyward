@@ -49,6 +49,7 @@
 "settings.appearanceHint" = "Follow the system, or pin light / dark.";
 "settings.language" = "Language";
 "settings.languageHint" = "Applies immediately.";
+"mcp.down" = "Keyward is not answering on this address yet. Reopen the app and try again.";
 "settings.launchAtLogin" = "Launch at login";
 "settings.launchAtLoginHint" = "Keyward must be running to broker requests.";
 "settings.mark" = "The mark";
@@ -124,14 +125,6 @@
 "add.upstreamHint" = "Set this and Keyward forwards requests instead of handing the value over. Known services are recognised automatically.";
 "add.upstreamReveal" = "Is this an HTTP API? Set a base URL →";
 "error.daemonUnavailable" = "Keyward's background service could not be started. Reinstalling the app usually fixes this.";
-"cli.title" = "The kw command";
-"cli.hintMissing" = "Install it so your terminal — and your coding agent — can run kw exec.";
-"cli.hintInstalled" = "Linked at /usr/local/bin/kw.";
-"cli.install" = "Install";
-"cli.remove" = "Remove";
-"cli.error.missing" = "This build does not contain the kw binary.";
-"cli.error.occupied %@" = "Something else already owns /usr/local/bin/kw (%@). Remove it first — Keyward will not overwrite it.";
-"cli.error.manual %@ %@" = "Could not write to /usr/local/bin. Run this yourself:\nsudo ln -sf %1$@ %2$@";
 "approve.title %@" = "Share “%@”?";
 "approve.consequence" = "The program below will receive the real value. Keyward cannot forward this one, so approving hands it over.";
 "approve.who" = "Program";

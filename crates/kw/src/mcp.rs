@@ -25,7 +25,8 @@
 //! four methods, and a dependency here is a dependency in the binary that a coding
 //! agent is invited to run.
 
-use std::io::{BufRead, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -35,6 +36,140 @@ use crate::scan;
 
 /// Fallback protocol version when a client does not name one.
 const PROTOCOL_VERSION: &str = "2025-06-18";
+
+/// The port `kw mcp --http` listens on unless told otherwise.
+///
+/// Fixed rather than ephemeral, because the whole point of the HTTP transport is
+/// that the line a user pastes into their agent stays the same forever. An
+/// ephemeral port would put us back where the stdio transport was: a config that
+/// has to be regenerated whenever something moves.
+pub const DEFAULT_HTTP_PORT: u16 = 8787;
+
+/// Serve MCP over loopback HTTP instead of stdio.
+///
+/// The reason this exists is not technical. Over stdio the client config has to
+/// name a binary by absolute path — `/Applications/Keyward.app/Contents/MacOS/kw`
+/// — which asks a person who has never opened a terminal to reason about the
+/// filesystem, and breaks the moment the app is moved. Over HTTP the same config
+/// is a URL that never changes.
+pub fn run_http(port: u16) -> i32 {
+    let listener = match TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("kw: cannot listen on 127.0.0.1:{port}: {e}");
+            return 1;
+        }
+    };
+    // Loopback only, never 0.0.0.0: this server answers questions about which
+    // secrets exist, and that is a question for this machine alone.
+    println!("keyward mcp on http://127.0.0.1:{port}/mcp");
+    let _ = std::io::stdout().flush();
+
+    for stream in listener.incoming() {
+        let Ok(stream) = stream else { continue };
+        std::thread::spawn(move || {
+            let _ = serve_http(stream);
+        });
+    }
+    0
+}
+
+fn serve_http(mut stream: TcpStream) -> std::io::Result<()> {
+    let mut reader = BufReader::new(stream.try_clone()?);
+    let mut request_line = String::new();
+    if reader.read_line(&mut request_line)? == 0 {
+        return Ok(());
+    }
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or_default().to_owned();
+    let path = parts.next().unwrap_or_default().to_owned();
+
+    let mut length = 0usize;
+    let mut host = String::new();
+    let mut origin: Option<String> = None;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line)? == 0 {
+            break;
+        }
+        let line = line.trim_end();
+        if line.is_empty() {
+            break;
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let value = value.trim();
+        match name.to_ascii_lowercase().as_str() {
+            "content-length" => length = value.parse().unwrap_or(0),
+            "host" => host = value.to_owned(),
+            "origin" => origin = Some(value.to_owned()),
+            _ => {}
+        }
+    }
+
+    // A web page can make its browser POST to 127.0.0.1. It cannot set `Origin`,
+    // so refusing every request that carries one keeps this endpoint out of reach
+    // of anything running in a browser tab. The MCP spec asks for the `Host`
+    // check for the same reason, against DNS rebinding.
+    if origin.is_some() {
+        return http_reply(&mut stream, 403, "requests from a browser are not served");
+    }
+    let hostname = host.split(':').next().unwrap_or_default();
+    if !matches!(hostname, "127.0.0.1" | "localhost" | "[::1]" | "::1" | "") {
+        return http_reply(&mut stream, 421, "this server answers on 127.0.0.1 only");
+    }
+    if !path.starts_with("/mcp") {
+        return http_reply(&mut stream, 404, "the endpoint is /mcp");
+    }
+    if method != "POST" {
+        // No SSE stream: every tool here answers immediately, so there is nothing
+        // for a long-lived channel to carry.
+        return http_reply(&mut stream, 405, "POST a JSON-RPC message to /mcp");
+    }
+
+    let mut body = vec![0u8; length];
+    reader.read_exact(&mut body)?;
+
+    let response = match serde_json::from_slice::<Value>(&body) {
+        Ok(request) => handle(&request),
+        Err(e) => Some(error_response(
+            Value::Null,
+            -32700,
+            &format!("parse error: {e}"),
+        )),
+    };
+
+    match response {
+        // A notification gets no JSON-RPC reply; HTTP still needs a status.
+        None => http_status(&mut stream, 202),
+        Some(value) => {
+            let body = value.to_string();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )?;
+            stream.flush()
+        }
+    }
+}
+
+fn http_reply(stream: &mut TcpStream, status: u16, message: &str) -> std::io::Result<()> {
+    let body = format!("{{\"error\":{{\"source\":\"keyward\",\"message\":\"{message}\"}}}}");
+    write!(
+        stream,
+        "HTTP/1.1 {status} \r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    )?;
+    stream.flush()
+}
+
+fn http_status(stream: &mut TcpStream, status: u16) -> std::io::Result<()> {
+    write!(stream, "HTTP/1.1 {status} \r\ncontent-length: 0\r\nconnection: close\r\n\r\n")?;
+    stream.flush()
+}
 
 pub fn run() -> i32 {
     let stdin = std::io::stdin();
