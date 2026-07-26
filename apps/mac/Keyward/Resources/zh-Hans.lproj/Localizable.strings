@@ -49,6 +49,7 @@
 "settings.appearanceHint" = "跟随系统，或固定为浅色 / 深色。";
 "settings.language" = "语言";
 "settings.languageHint" = "切换后立即生效。";
+"mcp.moved" = "常用端口被别的程序占了，Keyward 换了一个。如果你的 agent 之前已经接过，把上面这句再发一次——它配置里还是旧地址。";
 "mcp.down" = "这个地址暂时没有响应。重新打开 Keyward 再试一次。";
 "settings.launchAtLogin" = "开机启动";
 "settings.launchAtLoginHint" = "Keyward 需要常驻才能转发请求。";

@@ -49,6 +49,7 @@
 "settings.appearanceHint" = "Follow the system, or pin light / dark.";
 "settings.language" = "Language";
 "settings.languageHint" = "Applies immediately.";
+"mcp.moved" = "The usual port was taken by another program, so Keyward moved. If your agent was already connected, send it this message again — the address in its config is the old one.";
 "mcp.down" = "Keyward is not answering on this address yet. Reopen the app and try again.";
 "settings.launchAtLogin" = "Launch at login";
 "settings.launchAtLoginHint" = "Keyward must be running to broker requests.";

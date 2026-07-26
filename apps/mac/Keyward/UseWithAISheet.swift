@@ -61,6 +61,17 @@ struct UseWithAISheet: View {
                         .strokeBorder(Tint.line, lineWidth: 0.5)
                 )
 
+            // The address moved because something else had the usual port. The
+            // sentence above already carries the new one, but an agent that was
+            // connected before is still pointed at the old address and will not
+            // say so — it will simply stop finding Keyward.
+            if MCPServer.portChanged {
+                Text("mcp.moved")
+                    .font(Kind.meta)
+                    .foregroundStyle(Tint.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             // Shown only when it is wrong. A green light that is green every time
             // teaches nobody anything; the one state worth a line here is the one
             // where sending the message would not work.
@@ -101,7 +112,7 @@ struct UseWithAISheet: View {
         .background(Tint.surface)
         .task {
             while !Task.isCancelled {
-                endpointUp = MCPServer.isListening()
+                endpointUp = MCPServer.identify(MCPServer.port) == .keyward
                 try? await Task.sleep(for: .seconds(2))
             }
         }
