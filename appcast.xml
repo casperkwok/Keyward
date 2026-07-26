@@ -10,6 +10,14 @@
   <channel>
     <title>Keyward</title>
     <item>
+      <title>0.1.2</title>
+      <sparkle:version>0.1.2</sparkle:version>
+      <sparkle:shortVersionString>0.1.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 26 Jul 2026 04:32:24 +0000</pubDate>
+      <enclosure url="https://github.com/casperkwok/Keyward/releases/download/v0.1.2/Keyward-v0.1.2.zip" sparkle:edSignature="JIwmMtM6fDFqGRsXPnKCdVvx6D+JWUFj2HQITVEoa7Ra8D0cDSjXLF4Uu2DYHuEI76umBYepXKOwkaKXMm7/Bg==" length="4339442" type="application/octet-stream"/>
+    </item>
+    <item>
       <title>0.1.1</title>
       <sparkle:version>0.1.1</sparkle:version>
       <sparkle:shortVersionString>0.1.1</sparkle:shortVersionString>
