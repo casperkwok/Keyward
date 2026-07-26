@@ -1,17 +1,21 @@
 //
 //  UseWithAISheet.swift
-//  How to get a coding agent using Keyward: one snippet, one sentence.
+//  One sentence to copy, and nothing else.
 //
-//  Two earlier versions were heavier and both were wrong in the same direction.
-//  The first handed the user a paragraph of prose to paste into `CLAUDE.md`,
-//  which only existed because nothing connected `kw mcp` to anything. The second
-//  detected the installed agents and wrote their config files itself — which
-//  meant editing a `~/.claude.json` with a hundred projects in it, plus backups,
-//  a TOML appender and a format-detection path, all to save one copy-paste.
+//  Three earlier versions each asked the user to do the wiring themselves. The
+//  first pasted prose into `CLAUDE.md`. The second detected the installed agents
+//  and edited their config files for them — a `~/.claude.json` with a hundred
+//  projects in it, plus backups and a TOML appender, all to save one copy-paste.
+//  The third handed over a block of JSON and a list of file paths: "Claude Code:
+//  ~/.claude.json · Codex: ~/.codex/config.toml…".
 //
-//  An MCP config block is universal: every agent takes the same three keys, the
-//  user pastes it where they already keep such things, and Keyward never touches
-//  a file it does not own.
+//  All three shared a flaw. The person this is built for does not open config
+//  files — that is most of why they have a coding agent at all. Handing them
+//  JSON and a path is handing them the job.
+//
+//  The agent, on the other hand, edits config files for a living. So this screen
+//  is one sentence addressed to it, and the user's entire task is to paste that
+//  sentence into the conversation they already have open.
 //
 
 import SwiftUI
@@ -28,26 +32,13 @@ struct UseWithAISheet: View {
         store.secrets.first?.name ?? "stripe"
     }
 
-    /// A URL, not a path into the app bundle.
-    ///
-    /// This used to name `kw` by absolute path, which is what the stdio transport
-    /// requires. Two things were wrong with it: it asked a person who has never
-    /// opened a terminal to reason about where files live, and it went stale the
-    /// moment the app was moved. The endpoint answers at the same address for
-    /// ever.
-    private var snippet: String {
-        """
-        {
-          "mcpServers": {
-            "keyward": { "type": "http", "url": "\(MCPServer.url)" }
-          }
-        }
-        """
+    private var message: String {
+        Loc.t("use.message %@", MCPServer.url)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text("use.title")
                     .font(.system(size: 19, weight: .semibold))
                     .tracking(Kind.headingTracking)
@@ -57,56 +48,35 @@ struct UseWithAISheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("use.step1")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Tint.ink)
-                Text(snippet)
-                    .font(.system(size: 11.5, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(13)
-                    .background(Tint.surface3, in: RoundedRectangle(cornerRadius: Radius.card))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.card)
-                            .strokeBorder(Tint.line, lineWidth: 0.5)
-                    )
-                // `verbatim`, because `Text` parses Markdown and this line is
-                // full of `~/` paths — a pair of tildes is strikethrough, so the
-                // config locations rendered with a line through them.
-                // Shown only when it is wrong. A green dot that is green every
-                // time teaches nobody anything; the one case worth a line on this
-                // screen is the one where pasting the config would not work.
-                if !endpointUp {
-                    Text("mcp.down")
-                        .font(Kind.meta)
-                        .foregroundStyle(Tint.amber)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Text(verbatim: Loc.t("use.where"))
+            Text(verbatim: message)
+                .font(.system(size: 14))
+                .foregroundStyle(Tint.ink)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(15)
+                .background(Tint.surface3, in: RoundedRectangle(cornerRadius: Radius.card))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.card)
+                        .strokeBorder(Tint.line, lineWidth: 0.5)
+                )
+
+            // Shown only when it is wrong. A green light that is green every time
+            // teaches nobody anything; the one state worth a line here is the one
+            // where sending the message would not work.
+            if !endpointUp {
+                Text("mcp.down")
                     .font(Kind.meta)
-                    .foregroundStyle(Tint.ink3)
+                    .foregroundStyle(Tint.amber)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                Text("use.step2")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Tint.ink)
-                Text(Loc.t("use.example %@", exampleName))
-                    .font(.system(size: 14))
-                    .foregroundStyle(Tint.ink)
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 11)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Tint.surface3, in: RoundedRectangle(cornerRadius: Radius.card))
-                // Without this line a reader assumes "use the key" means the
-                // agent is handed one, which is the opposite of the product.
-                Text(Loc.t("use.whatHappens %@", exampleName))
-                    .font(Kind.meta)
-                    .foregroundStyle(Tint.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            // Without this the user has copied a sentence and no idea what it
+            // buys them.
+            Text(Loc.t("use.after %@", exampleName))
+                .font(Kind.meta)
+                .foregroundStyle(Tint.ink2)
+                .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: 8) {
                 Spacer()
@@ -115,7 +85,7 @@ struct UseWithAISheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button(copied ? "action.copied" : "use.copy") {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(snippet, forType: .string)
+                    NSPasteboard.general.setString(message, forType: .string)
                     copied = true
                     Task {
                         try? await Task.sleep(for: .seconds(1.5))
@@ -127,7 +97,7 @@ struct UseWithAISheet: View {
             }
         }
         .padding(24)
-        .frame(width: 480)
+        .frame(width: 460)
         .background(Tint.surface)
         .task {
             while !Task.isCancelled {
