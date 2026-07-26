@@ -554,6 +554,7 @@ fn cmd_exec(args: &[String]) -> i32 {
         .map(|r| scrub::Rule {
             needle: r.needle.clone(),
             replacement: r.replacement.clone(),
+            match_prefix: r.match_prefix,
         })
         .collect();
 

@@ -643,6 +643,21 @@ fn service_for(name: &str) -> Option<(&'static str, Option<&'static str>)> {
         ("openai", "https://api.openai.com", Some("OPENAI_BASE_URL")),
         ("anthropic", "https://api.anthropic.com", Some("ANTHROPIC_BASE_URL")),
         ("deepseek", "https://api.deepseek.com", None),
+        // Alibaba's DashScope, under both names people give it. Its absence is
+        // how a real Qwen key ended up handed to a Python process that then
+        // printed the front of it: the fallback for an unrecognised name is to
+        // hand it over, and an HTTP bearer API that nobody listed here looks
+        // exactly like an SSH key to this table.
+        ("dashscope", "https://dashscope.aliyuncs.com", None),
+        ("qwen", "https://dashscope.aliyuncs.com", None),
+        ("zhipu", "https://open.bigmodel.cn", None),
+        ("glm", "https://open.bigmodel.cn", None),
+        ("minimax", "https://api.minimaxi.com", None),
+        ("siliconflow", "https://api.siliconflow.cn", None),
+        ("openrouter", "https://openrouter.ai", Some("OPENROUTER_BASE_URL")),
+        ("together", "https://api.together.xyz", None),
+        ("mistral", "https://api.mistral.ai", None),
+        ("perplexity", "https://api.perplexity.ai", None),
         ("moonshot", "https://api.moonshot.cn", None),
         ("kimi", "https://api.moonshot.cn", None),
         ("groq", "https://api.groq.com", None),
