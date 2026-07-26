@@ -188,6 +188,65 @@ impl SecretStore {
         Self::read_keychain(&secret.keychain_account())
     }
 
+    /// Issue — or return — the long-lived token for a secret.
+    ///
+    /// The gap this closes: everything else here assumes the process using a key
+    /// is one Keyward started. Plenty are not. Codex, an IDE, a desktop client —
+    /// the user launches those, and they read a credential from a config file or
+    /// an environment variable that was set long before Keyward could inject
+    /// anything. Today the only way to satisfy them is to put the real key there,
+    /// which is the thing this product exists to stop.
+    ///
+    /// A pinned token goes in that config file instead. It authorises exactly one
+    /// secret, only through the loopback broker, only on this machine, and it can
+    /// be revoked in a click. The credential itself never leaves the keychain.
+    ///
+    /// It is still a bearer credential on disk and this is not pretending
+    /// otherwise. What changes is the blast radius: a leaked token is revoked
+    /// here in a second, where a leaked API key is valid worldwide until somebody
+    /// notices and rotates it.
+    ///
+    /// Stored in the keychain rather than `vault.json`, because `vault.json` is
+    /// the file that holds no secrets and that has to stay true.
+    pub fn pin(&mut self, name: &str) -> Result<String, StoreError> {
+        if self.vault.get(name).is_none() {
+            return Err(StoreError::NotFound(name.to_owned()));
+        }
+        if let Ok(existing) = Self::read_keychain(&Self::pin_account(name)) {
+            return Ok(existing);
+        }
+        let token = format!("kwp_{}", crate::broker::random_hex());
+        Self::write_keychain(&Self::pin_account(name), &token)?;
+        Ok(token)
+    }
+
+    /// Revoke it. The next request carrying it is refused.
+    pub fn unpin(&self, name: &str) -> Result<(), StoreError> {
+        match Self::entry(&Self::pin_account(name))?.delete_credential() {
+            Ok(()) => Ok(()),
+            // Already gone is the state the caller asked for.
+            Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(StoreError::Keychain(e.to_string())),
+        }
+    }
+
+    pub fn pin_token(&self, name: &str) -> Option<String> {
+        Self::read_keychain(&Self::pin_account(name)).ok()
+    }
+
+    /// Every pinned secret, for restoring the broker's routes on start.
+    pub fn pins(&self) -> Vec<(String, String)> {
+        self.vault
+            .secrets
+            .keys()
+            .filter_map(|name| self.pin_token(name).map(|t| (name.clone(), t)))
+            .collect()
+    }
+
+    fn pin_account(name: &str) -> String {
+        format!("{name}/pin")
+    }
+
     // MARK: keychain
 
     fn entry(account: &str) -> Result<keyring::Entry, StoreError> {

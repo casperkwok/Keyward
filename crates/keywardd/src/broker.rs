@@ -40,6 +40,14 @@ pub const MAX_TTL_SECS: u64 = 86_400;
 /// nothing is authorised in the gap.
 const REAP_EVERY: Duration = Duration::from_secs(30);
 
+/// An expiry that never arrives, for a pinned token.
+///
+/// Pinned routes are the one kind that must survive both the reaper and the
+/// process that opened them, because nothing opened them: they exist so an app
+/// the *user* launches — Codex, an IDE, a desktop client — can read a token from
+/// its own config instead of a real key.
+pub const NEVER: u64 = u64::MAX;
+
 /// Where one session's traffic goes and what it is authorised with.
 #[derive(Clone)]
 struct Route {
@@ -110,12 +118,23 @@ pub struct Served {
 }
 
 impl Broker {
-    /// Bind an ephemeral loopback port and start serving.
+    /// Bind a stable loopback port and start serving.
     ///
     /// `127.0.0.1` explicitly, never `0.0.0.0`: a broker reachable from the
     /// network would hand a credential to anyone who could guess a token.
-    pub fn start(on_use: impl Fn(Served) + Send + Sync + 'static) -> std::io::Result<Self> {
-        let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;
+    ///
+    /// The port used to be ephemeral, which was right while every session died
+    /// with the process that opened it — `kw exec` learns the address at launch
+    /// and nothing outlives it. Pinned tokens changed that: an app the user
+    /// starts reads its base URL from a config file written days ago, so an
+    /// address that moves on every reboot is an address that is wrong by
+    /// morning. `preferred` is tried first and the caller remembers what was
+    /// actually bound.
+    pub fn start(
+        preferred: u16,
+        on_use: impl Fn(Served) + Send + Sync + 'static,
+    ) -> std::io::Result<Self> {
+        let listener = Self::bind_stable(preferred)?;
         let port = listener.local_addr()?.port();
         let routes: Arc<Mutex<HashMap<String, Route>>> = Arc::new(Mutex::new(HashMap::new()));
 
@@ -149,6 +168,22 @@ impl Broker {
         });
 
         Ok(Self { port, routes })
+    }
+
+    /// The preferred port, then the fifteen above it, then anything free.
+    ///
+    /// Walking upward keeps the address predictable when something transient had
+    /// the port; falling back to an ephemeral one keeps Keyward working on a
+    /// machine where all sixteen are taken, at the cost of a base URL that has to
+    /// be re-copied. Refusing to start would be worse: every brokered secret
+    /// stops working, not just the pinned ones.
+    fn bind_stable(preferred: u16) -> std::io::Result<TcpListener> {
+        for port in preferred..preferred.saturating_add(16) {
+            if let Ok(l) = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, port))) {
+                return Ok(l);
+            }
+        }
+        TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
     }
 
     pub fn port(&self) -> u16 {
@@ -193,6 +228,30 @@ impl Broker {
         };
         self.routes.lock().ok()?.insert(token, route);
         Some(session)
+    }
+
+    /// Register a route that does not expire, under a token the caller chose.
+    ///
+    /// Separate from `open` because the two differ in every way that matters:
+    /// this one is restored from the keychain at start-up rather than created on
+    /// demand, its token outlives the daemon, and it is revoked by deleting that
+    /// token rather than by a process exiting.
+    pub fn pin(&self, secret: &str, upstream: &str, credential: String, token: &str) {
+        let route = Route {
+            upstream: upstream.trim_end_matches('/').to_owned(),
+            credential,
+            secret: secret.to_owned(),
+            opened_at: epoch_secs(),
+            expires_at: NEVER,
+            requests: 0,
+            actor: None,
+            owner: Some("pinned".into()),
+            owner_label: None,
+            project: None,
+        };
+        if let Ok(mut routes) = self.routes.lock() {
+            routes.insert(token.to_owned(), route);
+        }
     }
 
     pub fn close(&self, token: &str) -> bool {
@@ -276,7 +335,7 @@ fn epoch_secs() -> u64 {
         .unwrap_or(0)
 }
 
-fn random_hex() -> String {
+pub fn random_hex() -> String {
     let mut bytes = [0u8; 32];
     // `/dev/urandom` rather than a crate: one read, no dependency, and the
     // failure mode is loud rather than a weak token.

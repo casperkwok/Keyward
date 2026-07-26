@@ -27,6 +27,12 @@ use crate::approval::{Approvals, Outcome};
 use crate::broker::{Broker, Opened, Served};
 use crate::store::{SecretStore, StoreError};
 
+/// Where the broker listens unless something already has the port.
+///
+/// Stable by design: a pinned token is only useful if the address beside it in
+/// some app's config is still right tomorrow.
+const DEFAULT_BROKER_PORT: u16 = 8788;
+
 fn support_dir() -> Option<PathBuf> {
     let home = std::env::var("HOME").ok()?;
     Some(PathBuf::from(home).join("Library/Application Support/Keyward"))
@@ -52,7 +58,14 @@ fn main() -> std::io::Result<()> {
     // The broker records a use for every request it forwards, so the "who used
     // it" screen fills in from real traffic rather than from launches.
     let logging = Arc::clone(&store);
-    let broker = match Broker::start(move |served: Served| {
+    // Remembered across restarts so a config file that names it stays correct.
+    let port_file = dir.join("broker-port");
+    let preferred = fs::read_to_string(&port_file)
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .unwrap_or(DEFAULT_BROKER_PORT);
+
+    let broker = match Broker::start(preferred, move |served: Served| {
         if let Ok(store) = logging.lock() {
             store.record(&Use {
                 at: now_iso8601(),
@@ -73,6 +86,27 @@ fn main() -> std::io::Result<()> {
             std::process::exit(1);
         }
     };
+
+    // Pinned routes exist before any client connects — that is the point of
+    // them. An app the user launches reads its token from a config file written
+    // days ago, and expects it to work the moment the machine is on.
+    if let Ok(store) = store.lock() {
+        let mut restored = 0;
+        for (name, token) in store.pins() {
+            let Some(secret) = store.vault().get(&name) else { continue };
+            let Delivery::Brokered { upstream, .. } = secret.delivery.clone() else {
+                continue;
+            };
+            let Ok(value) = store.reveal(&name) else { continue };
+            broker.pin(&name, &upstream, value, &token);
+            restored += 1;
+        }
+        if restored > 0 {
+            println!("{restored} pinned route(s) restored");
+        }
+    }
+
+    let _ = fs::write(&port_file, broker.port().to_string());
 
     let socket = dir.join("keywardd.sock");
     let _ = fs::remove_file(&socket);
@@ -255,6 +289,58 @@ fn handle(
             return ok(id, json!({ "quitting": true }));
         }
 
+        // A token an app the user launches can hold instead of the real key.
+        "broker.pin" => {
+            let Some(name) = str_param(params, "name") else {
+                return fail(id, "bad_request", "`name` is required");
+            };
+            let Some(secret) = store.vault().get(&name) else {
+                return fail(id, "not_found", &format!("no secret named `{name}`"));
+            };
+            // Only a brokered secret can have one. A handed secret has no route
+            // to authorise — the program gets the value itself, and a token
+            // standing in front of nothing would be a promise this cannot keep.
+            let Delivery::Brokered { upstream, .. } = secret.delivery.clone() else {
+                return fail(
+                    id,
+                    "denied",
+                    &format!(
+                        "`{name}` is not an HTTP credential, so there is nothing to put a token in front of"
+                    ),
+                );
+            };
+            let token = match store.pin(&name) {
+                Ok(t) => t,
+                Err(e) => return fail(id, e.code(), &e.to_string()),
+            };
+            let value = match store.reveal(&name) {
+                Ok(v) => v,
+                Err(e) => return fail(id, e.code(), &e.to_string()),
+            };
+            broker.pin(&name, &upstream, value, &token);
+            return ok(
+                id,
+                json!({
+                    "token": token,
+                    "base_url": format!("http://127.0.0.1:{}", broker.port()),
+                    "upstream": upstream,
+                }),
+            );
+        }
+
+        "broker.unpin" => {
+            let Some(name) = str_param(params, "name") else {
+                return fail(id, "bad_request", "`name` is required");
+            };
+            if let Some(token) = store.pin_token(&name) {
+                broker.close(&token);
+            }
+            return match store.unpin(&name) {
+                Ok(()) => ok(id, json!({ "revoked": true })),
+                Err(e) => fail(id, e.code(), &e.to_string()),
+            };
+        }
+
         "vault.list" => {
             let recent = store.uses(None, 500);
             let live = broker.sessions();
@@ -321,8 +407,21 @@ fn handle(
             else {
                 return fail(id, "bad_request", "`name` and `value` are required");
             };
+            // A pinned route holds a copy of the credential taken when it was
+            // pinned. Rotating without refreshing it means the broker keeps
+            // presenting the old key — and rotation is what people do *after* a
+            // leak, so failing here fails at the worst possible moment.
+            let refresh_pin = store.pin_token(&name).map(|t| (t, secret_upstream(&store, &name)));
             match store.rotate(&name, value) {
-                Ok(()) => ok(id, json!({"ok": true})),
+                Ok(()) => {
+                    if let Some((token, Some(upstream))) = refresh_pin
+                        && let Ok(fresh) = store.reveal(&name)
+                    {
+                        broker.close(&token);
+                        broker.pin(&name, &upstream, fresh, &token);
+                    }
+                    ok(id, json!({"ok": true}))
+                }
                 Err(e) => fail(id, e.code(), &e.to_string()),
             }
         }
@@ -608,6 +707,14 @@ fn hand(
 /// Secret *values* use [`raw_param`] instead: a credential may legitimately
 /// begin or end in whitespace, and trimming one would store a key that is not
 /// the key the user has.
+/// The upstream a brokered secret forwards to, if it is brokered at all.
+fn secret_upstream(store: &SecretStore, name: &str) -> Option<String> {
+    match store.vault().get(name).map(|s| s.delivery.clone()) {
+        Some(Delivery::Brokered { upstream, .. }) => Some(upstream),
+        _ => None,
+    }
+}
+
 fn str_param(params: Option<&Value>, key: &str) -> Option<String> {
     params
         .and_then(|p| p.get(key))

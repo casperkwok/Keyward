@@ -38,6 +38,10 @@ kw — Keyward
   kw rotate <name>          replace a value
   kw rm <name>              delete a secret
 
+  kw pin <name>             a long-lived local token for an app you launch
+                            yourself — put it in that app's config instead of
+                            the key. `kw pin <name> --revoke` kills it.
+
   kw exec [-f .env] -- CMD  resolve keyward:// refs in .env, run CMD
   kw render TMPL -o OUT     resolve refs into a file — last resort, see below
 
@@ -73,6 +77,7 @@ fn run(args: &[String]) -> i32 {
         "add" => cmd_add(args),
         "rotate" => cmd_rotate(args.get(1)),
         "rm" | "remove" => cmd_remove(args.get(1)),
+        "pin" => cmd_pin(args),
         "exec" => return cmd_exec(args.get(1..).unwrap_or_default()),
         "scan" => return scan::run(args.get(1..).unwrap_or_default()),
         "render" => return render::run(args.get(1..).unwrap_or_default()),
@@ -202,6 +207,41 @@ fn cmd_status() -> Result<(), Error> {
     println!("keywardd {version}{}", if stub { " (stub)" } else { "" });
     println!("{count} secrets");
     println!("socket {}", client::socket_path().display());
+    Ok(())
+}
+
+/// A token for an app Keyward did not start.
+///
+/// Everything else here assumes the process using a key is one Keyward launched.
+/// Codex, an IDE, a desktop client — the user starts those, and they read a
+/// credential from a config file long before `kw exec` could inject anything.
+/// The honest options were to put the real key in that file or to leave the case
+/// unsolved; this is the third one.
+fn cmd_pin(args: &[String]) -> Result<(), Error> {
+    let Some(name) = args.get(1) else {
+        return Err(Error::Malformed("usage: kw pin <name> [--revoke]".into()));
+    };
+    let mut client = Client::connect()?;
+
+    if args.contains(&"--revoke".to_string()) {
+        client.call("broker.unpin", json!({ "name": name }))?;
+        println!("Revoked. Anything still using that token stops working now.");
+        return Ok(());
+    }
+
+    let result = client.call("broker.pin", json!({ "name": name }))?;
+    let token = result.get("token").and_then(Value::as_str).unwrap_or("");
+    let base = result.get("base_url").and_then(Value::as_str).unwrap_or("");
+    let upstream = result.get("upstream").and_then(Value::as_str).unwrap_or("");
+
+    println!("{token}");
+    println!();
+    println!("  Put that where the app wants its API key, and point its base URL at");
+    println!("  {base}");
+    println!("  Requests go on to {upstream} with the real credential attached.");
+    println!();
+    println!("  It works only on this machine and only for `{name}`.");
+    println!("  `kw pin {name} --revoke` kills it without touching the key itself.");
     Ok(())
 }
 
