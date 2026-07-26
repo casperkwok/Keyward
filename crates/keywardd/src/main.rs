@@ -293,7 +293,7 @@ fn handle(
         }
 
         "vault.add" => {
-            let (Some(name), Some(value)) = (str_param(params, "name"), str_param(params, "value"))
+            let (Some(name), Some(value)) = (str_param(params, "name"), raw_param(params, "value"))
             else {
                 return fail(id, "bad_request", "`name` and `value` are required");
             };
@@ -317,7 +317,7 @@ fn handle(
         }
 
         "vault.rotate" => {
-            let (Some(name), Some(value)) = (str_param(params, "name"), str_param(params, "value"))
+            let (Some(name), Some(value)) = (str_param(params, "name"), raw_param(params, "value"))
             else {
                 return fail(id, "bad_request", "`name` and `value` are required");
             };
@@ -596,7 +596,29 @@ fn hand(
     ok(id, json!({ "values": Value::Object(values) }))
 }
 
+/// A string parameter, trimmed, with empty treated as absent.
+///
+/// Trimming is not tidiness. A name pasted with a leading space is stored with
+/// it, and nothing on screen shows a space: the row simply sits eight pixels to
+/// the right of its neighbours, and two secrets whose names differ only by that
+/// space are indistinguishable to the person choosing between them. Every
+/// parameter that reaches here is either a name, an identifier or a URL, and
+/// none of them has a meaningful leading or trailing space.
+///
+/// Secret *values* use [`raw_param`] instead: a credential may legitimately
+/// begin or end in whitespace, and trimming one would store a key that is not
+/// the key the user has.
 fn str_param(params: Option<&Value>, key: &str) -> Option<String> {
+    params
+        .and_then(|p| p.get(key))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+}
+
+/// A string parameter exactly as sent. For secret values only.
+fn raw_param(params: Option<&Value>, key: &str) -> Option<String> {
     params
         .and_then(|p| p.get(key))
         .and_then(Value::as_str)
@@ -831,4 +853,36 @@ fn now_iso8601() -> String {
         (secs % 3600) / 60,
         secs % 60
     )
+}
+
+#[cfg(test)]
+mod param_tests {
+    use super::*;
+
+    #[test]
+    fn names_are_trimmed_and_values_are_not() {
+        let params = json!({
+            "name": "  stripe  ",
+            "display": " AC_API_ISSUER_ID",
+            // A credential is whatever the issuer says it is. Some are handed
+            // out with a trailing newline, and trimming one stores a key that
+            // does not authenticate — a failure the user would blame on the API.
+            "value": "  sk_live_trailing_space  ",
+        });
+        let params = Some(&params);
+        assert_eq!(str_param(params, "name").as_deref(), Some("stripe"));
+        assert_eq!(str_param(params, "display").as_deref(), Some("AC_API_ISSUER_ID"));
+        assert_eq!(
+            raw_param(params, "value").as_deref(),
+            Some("  sk_live_trailing_space  ")
+        );
+    }
+
+    #[test]
+    fn a_name_of_only_spaces_is_absent_rather_than_empty() {
+        // Otherwise it reaches the vault as "", which no screen can show and no
+        // reference can name.
+        let params = json!({ "name": "   " });
+        assert_eq!(str_param(Some(&params), "name"), None);
+    }
 }

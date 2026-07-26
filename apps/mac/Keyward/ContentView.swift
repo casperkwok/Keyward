@@ -52,7 +52,10 @@ struct ContentView: View {
                 .navigationSplitViewStyle(.balanced)
             }
         }
-        .frame(minWidth: compact ? 296 : 640, minHeight: compact ? 380 : 460)
+        // No tall minimum in the popover: it is sized to its content, and a
+        // floor here would defeat that.
+        .frame(minWidth: compact ? 296 : 640)
+        .frame(minHeight: compact ? 180 : 460)
         .task { await store.load() }
         .task { await store.followLiveSessions() }
         // Every sheet carries the locale explicitly.

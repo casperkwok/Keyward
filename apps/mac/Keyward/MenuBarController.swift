@@ -48,13 +48,26 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         pop.behavior = .transient
         pop.animates = true
         pop.delegate = self
-        pop.contentViewController = NSHostingController(
+        // A popover is its own window, so it inherits neither the language nor
+        // the appearance the scene set — the same trap the sheets fell into.
+        // Without these two lines the list rows read Chinese (they go through
+        // `Loc.t`) while "Search", "Add secret" and "3 in the keychain" read
+        // English (they are `Text(key)`, resolved against the *system* language).
+        let host = NSHostingController(
             rootView: ContentView(compact: true)
                 .environment(store)
                 .environment(prefs)
+                .localised(prefs)
+                .preferredColorScheme(prefs.appearance.colorScheme)
                 .tint(Tint.accent)
-                .frame(width: 296, height: 400)
+                .frame(width: 296)
+                .frame(maxHeight: 460)
         )
+        // Size to the content instead of always 400pt tall. Three secrets in a
+        // 400pt box is mostly empty space, which reads as a list that failed to
+        // load rather than a short one.
+        host.sizingOptions = .preferredContentSize
+        pop.contentViewController = host
         popover = pop
     }
 
