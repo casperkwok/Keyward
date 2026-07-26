@@ -9,5 +9,13 @@
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
     <title>Keyward</title>
+    <item>
+      <title>0.1.0</title>
+      <sparkle:version>0.1.0</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <pubDate>Sun, 26 Jul 2026 02:55:00 +0000</pubDate>
+      <enclosure url="https://github.com/casperkwok/Keyward/releases/download/v0.1.0/Keyward-v0.1.0.zip" sparkle:edSignature="kf1l2hRhgAttkl0IxHJfqZnvC66/nRkORk/HUr9QO4GaOF3t20z/UVPNsSL159KYTceanEdjEyUL8OOaHFzRAA==" length="4325785" type="application/octet-stream"/>
+    </item>
   </channel>
 </rss>
