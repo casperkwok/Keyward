@@ -204,8 +204,12 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Search filters this list, so it lives in this column — not in the
             // toolbar over the pane beside it, where it belonged to nothing.
+            // The window has a toolbar band above this; the popover has nothing
+            // but its own arrow, so without a top inset the search field sits
+            // flush against the edge and the whole panel reads as clipped.
             searchBar
                 .padding(.horizontal, Space.m)
+                .padding(.top, compact ? 10 : 0)
                 .padding(.bottom, Space.s)
             list
             Divider().overlay(Tint.line)
@@ -385,9 +389,14 @@ struct ContentView: View {
                 Self.openMainWindow()
             }
         } label: {
+            // `compact`, not `true`. Hard-coded, this made the window's sidebar
+            // render the popover's row: no masked value, no hover chevron, and
+            // the roomier metrics `SecretRow` defines for the window never once
+            // applied. Both `if !compact` branches in that file were unreachable
+            // from anywhere in the app.
             SecretRow(
                 secret: secret,
-                compact: true,
+                compact: compact,
                 isHovered: hovered == secret.id,
                 isSelected: store.selected?.id == secret.id
             )

@@ -12,21 +12,30 @@ struct SecretRow: View {
     var isHovered = false
     var isSelected = false
 
-    private var avatarSide: CGFloat { compact ? 28 : 32 }
+    // The popover is a menu, not a settings pane. A 52pt row with a 28pt avatar
+    // is the density of the latter; at 296pt wide it reads as three enormous
+    // buttons rather than a list you scan.
+    private var avatarSide: CGFloat { compact ? 24 : 32 }
+    private var titleSize: CGFloat { compact ? 13 : 14 }
+    private var metaSize: CGFloat { compact ? 11 : 12 }
+    /// Matches the search field's inset above it, so the two left edges line up.
+    private var insetH: CGFloat { compact ? 12 : 15 }
+    private var insetV: CGFloat { compact ? 8 : 11 }
+    private var minHeight: CGFloat { compact ? 44 : 52 }
 
     var body: some View {
-        HStack(spacing: 11) {
+        HStack(spacing: compact ? 9 : 11) {
             Avatar(letter: secret.letter, hex: secret.tint, logo: secret.logo, side: avatarSide)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(secret.display)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: titleSize, weight: .medium))
                     .tracking(Kind.rowTitleTracking)
                     .foregroundStyle(Tint.ink)
                     .lineLimit(1)
 
                 Text(usage)
-                    .font(.system(size: 12))
+                    .font(.system(size: metaSize))
                     .tracking(Kind.metaTracking)
                     .foregroundStyle(Tint.ink3)
                     .lineLimit(1)
@@ -35,12 +44,12 @@ struct SecretRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(spacing: Space.s + 2) {
-                if !compact, let masked = secret.masked {
-                    Text(masked)
-                        .font(Kind.mono)
-                        .monospacedDigit()
-                        .foregroundStyle(Tint.ink3)
-                }
+                // No masked value here. It was in this row from the start and
+                // never appeared, because the list always built the compact
+                // variant; switching that on showed why nobody had missed it —
+                // at the sidebar's 286pt the name truncates to "AC_API…" and the
+                // usage line to "./setsecre…" to make room for eight characters
+                // that identify nothing. The detail pane has the space for it.
                 // A live session outranks the resting status: while Keyward is
                 // forwarding, "something is happening right now" is the more
                 // useful thing for the dot to say.
@@ -62,9 +71,9 @@ struct SecretRow: View {
                 }
             }
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 11)
-        .frame(minHeight: 52)
+        .padding(.horizontal, insetH)
+        .padding(.vertical, insetV)
+        .frame(minHeight: minHeight)
         .contentShape(Rectangle())
     }
 
